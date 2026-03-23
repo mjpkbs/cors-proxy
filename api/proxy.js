@@ -11,7 +11,7 @@ const ALLOWED_HOSTS = [
   'ecos.bok.or.kr',
 ];
 
-function corsHeaders(origin) {
+function getCorsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin || '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -20,34 +20,35 @@ function corsHeaders(origin) {
   };
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   const origin = req.headers.origin || '';
+
+  // CORS headers on every response
+  const cors = getCorsHeaders(origin);
+  Object.entries(cors).forEach(([k, v]) => res.setHeader(k, v));
 
   // Preflight
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, corsHeaders(origin));
-    return res.end();
+    return res.status(204).end();
   }
 
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  // CORS headers on every response
-  Object.entries(corsHeaders(origin)).forEach(([k, v]) => res.setHeader(k, v));
-
   const targetUrl = req.query.url;
   if (!targetUrl) {
-    return res.status(200).json({ status: 'ok', usage: '?url=<encoded_url>' });
+    return res.status(200).json({ status: 'ok', usage: '/api/proxy?url=<encoded_url>' });
   }
 
   // Validate target host
+  let hostname;
   try {
-    const hostname = new URL(targetUrl).hostname;
+    hostname = new URL(targetUrl).hostname;
     if (!ALLOWED_HOSTS.includes(hostname)) {
-      return res.status(403).json({ error: 'Host not allowed' });
+      return res.status(403).json({ error: 'Host not allowed: ' + hostname });
     }
-  } catch {
+  } catch (e) {
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
@@ -70,7 +71,7 @@ export default async function handler(req, res) {
       });
 
       if (!response.ok) {
-        lastError = new Error(`HTTP ${response.status}`);
+        lastError = new Error('Upstream HTTP ' + response.status);
         continue;
       }
 
@@ -83,5 +84,5 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(502).json({ error: lastError?.message || 'All attempts failed' });
-}
+  return res.status(502).json({ error: lastError ? lastError.message : 'All attempts failed' });
+};
