@@ -1,78 +1,79 @@
-export default async function handler(req, res) {
-  // CORS 헤더 먼저 설정
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
+// Vercel Edge Function — CORS 프록시
+// Edge Runtime: 전 세계 엣지 노드에서 실행, 스트리밍 지원, 타임아웃 없음
+// 대용량 SGIS GeoJSON (수 MB) 처리 가능
+export const config = { runtime: 'edge' };
 
-  // Preflight 대응
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': '*',
+};
+
+// 허용 도메인 화이트리스트 (보안)
+const ALLOWED = [
+  'sgisapi.mods.go.kr',
+  'apis.data.go.kr',
+  'www.data.go.kr',
+];
+
+export default async function handler(req) {
+  // Preflight
   if (req.method === 'OPTIONS') {
-    return res.status(204).end();
+    return new Response(null, { status: 204, headers: CORS });
   }
 
-  const targetUrl = req.query.url;
+  const { searchParams } = new URL(req.url);
+  const target = searchParams.get('url');
 
-  if (!targetUrl) {
-    return res.status(400).json({ error: 'url 파라미터가 필요합니다.' });
+  if (!target) {
+    return new Response(JSON.stringify({ error: 'url param missing' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    });
   }
 
-  // 허용 도메인 화이트리스트 (보안)
-  const ALLOWED_DOMAINS = [
-    'sgisapi.mods.go.kr',       // SGIS 지도 API
-    'apis.data.go.kr',           // 공공데이터포털 (선관위 NEC API)
-    'openapi.gg.go.kr',          // 경기도 OpenAPI (혹시 필요할 때)
-  ];
-
-  let parsedUrl;
+  // 도메인 화이트리스트 검사
+  let targetHost;
   try {
-    parsedUrl = new URL(targetUrl);
+    targetHost = new URL(target).hostname;
   } catch {
-    return res.status(400).json({ error: '유효하지 않은 URL입니다.' });
+    return new Response(JSON.stringify({ error: 'invalid url' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    });
   }
 
-  const hostname = parsedUrl.hostname;
-  const isAllowed = ALLOWED_DOMAINS.some(domain => hostname === domain || hostname.endsWith('.' + domain));
-
-  if (!isAllowed) {
-    return res.status(403).json({ error: `허용되지 않은 도메인입니다: ${hostname}` });
+  if (!ALLOWED.some(h => targetHost === h || targetHost.endsWith('.' + h))) {
+    return new Response(JSON.stringify({ error: `blocked: ${targetHost}` }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    });
   }
 
   try {
-    // 요청 헤더 중 필요한 것만 전달
-    const forwardHeaders = {};
-    const allowedRequestHeaders = ['content-type', 'authorization', 'accept'];
-    for (const key of allowedRequestHeaders) {
-      if (req.headers[key]) {
-        forwardHeaders[key] = req.headers[key];
-      }
-    }
+    const upstream = await fetch(target, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; KBS-ElectionMap/1.0)',
+        'Accept': 'application/json, */*',
+      },
+    });
 
-    const fetchOptions = {
-      method: req.method,
-      headers: forwardHeaders,
-    };
+    // 응답을 그대로 스트리밍 — 버퍼링 없이 바이트 통과
+    // Edge Runtime은 Response body를 ReadableStream으로 직접 전달 가능
+    const contentType = upstream.headers.get('Content-Type') || 'application/json';
 
-    // POST body 전달
-    if (req.method === 'POST' && req.body) {
-      fetchOptions.body = typeof req.body === 'string'
-        ? req.body
-        : JSON.stringify(req.body);
-    }
-
-    const response = await fetch(targetUrl, fetchOptions);
-
-    // Content-Type 확인 후 적절히 반환
-    const contentType = response.headers.get('content-type') || '';
-    res.setHeader('Content-Type', contentType);
-
-    // 응답 상태 코드 그대로 전달
-    res.status(response.status);
-
-    // 바이너리(GeoJSON 등)도 처리되도록 ArrayBuffer로
-    const buffer = await response.arrayBuffer();
-    return res.send(Buffer.from(buffer));
-
-  } catch (err) {
-    console.error('Proxy error:', err);
-    return res.status(500).json({ error: `프록시 오류: ${err.message}` });
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-store',
+        ...CORS,
+      },
+    });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: e.message }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json', ...CORS },
+    });
   }
 }

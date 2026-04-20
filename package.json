@@ -1,6 +1,5 @@
 {
-  "name": "election-proxy",
+  "name": "kbs-election-cors-proxy",
   "version": "1.0.0",
-  "description": "KBS Election Map CORS Proxy (Vercel)",
   "private": true
 }

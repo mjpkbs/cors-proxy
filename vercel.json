@@ -1,15 +1,26 @@
 {
-  "version": 2,
   "functions": {
     "api/proxy.js": {
-      "memory": 128,
-      "maxDuration": 15
+      "runtime": "edge"
     }
   },
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "/api/proxy.js"
+      "source": "/",
+      "destination": "/api/proxy"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/proxy"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" }
+      ]
     }
   ]
 }
