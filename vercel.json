@@ -1,26 +1,10 @@
 {
   "functions": {
-    "api/proxy.js": {
+    "api/index.js": {
       "runtime": "edge"
     }
   },
   "rewrites": [
-    {
-      "source": "/",
-      "destination": "/api/proxy"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/api/proxy"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Access-Control-Allow-Origin", "value": "*" },
-        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" }
-      ]
-    }
+    { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
